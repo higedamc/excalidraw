@@ -96,6 +96,18 @@ export class DrawingEnvelopeParseError extends Error {
   }
 }
 
+/**
+ * A relay decides which events match a filter; a malicious or merely
+ * non-compliant one can return events it was never asked for, including
+ * genuinely-signed events from a different author. `authors` in a `Filter`
+ * is therefore a request, not a guarantee — every `querySync` result in
+ * this module is re-checked against the expected pubkey before use.
+ */
+const onlyFromAuthor = (
+  events: readonly NostrToolsEvent[],
+  pubkey: string,
+): NostrToolsEvent[] => events.filter((event) => event.pubkey === pubkey);
+
 const dTagFor = (id: string) => `${DRAWING_D_TAG_PREFIX}${id}`;
 const idFromDTag = (dTag: string) => dTag.slice(DRAWING_D_TAG_PREFIX.length);
 const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -178,7 +190,10 @@ const fetchDeletedIds = async (
   relays: readonly string[],
 ): Promise<Map<string, number>> => {
   const filter: Filter = { kinds: [DELETION_KIND], authors: [ctx.pubkey] };
-  const events = await ctx.pool.querySync([...relays], filter);
+  const events = onlyFromAuthor(
+    await ctx.pool.querySync([...relays], filter),
+    ctx.pubkey,
+  );
   const prefix = `${DRAWING_KIND}:${ctx.pubkey}:${DRAWING_D_TAG_PREFIX}`;
   const deleted = new Map<string, number>();
   for (const event of events) {
@@ -201,7 +216,13 @@ const fetchDeletedIds = async (
   return deleted;
 };
 
-/** Keeps only the newest event per `d` tag across every relay queried (addressable last-write-wins). */
+/**
+ * Keeps only the newest event per `d` tag across every relay queried
+ * (addressable last-write-wins). On a `created_at` tie, keeps the
+ * lexicographically *smaller* id — matching the NIP-01 rule relays
+ * themselves use to resolve replaceable-event ties, so the client's view
+ * agrees with what a compliant relay actually retains.
+ */
 const latestPerDTag = (
   events: readonly NostrToolsEvent[],
 ): NostrToolsEvent[] => {
@@ -215,7 +236,7 @@ const latestPerDTag = (
     if (
       existing === undefined ||
       event.created_at > existing.created_at ||
-      (event.created_at === existing.created_at && event.id > existing.id)
+      (event.created_at === existing.created_at && event.id < existing.id)
     ) {
       latest.set(dTag, event);
     }
@@ -260,7 +281,7 @@ export const listDrawings = async (
   ]);
 
   const summaries: SavedDrawingSummary[] = [];
-  for (const event of latestPerDTag(rawEvents)) {
+  for (const event of latestPerDTag(onlyFromAuthor(rawEvents, ctx.pubkey))) {
     const dTag = event.tags.find((tag) => tag[0] === "d")?.[1];
     if (dTag === undefined) {
       continue;
@@ -311,11 +332,11 @@ export const loadDrawing = async (
     authors: [ctx.pubkey],
     "#d": [dTagFor(id)],
   };
-  const [events, deletedIds] = await Promise.all([
+  const [rawEvents, deletedIds] = await Promise.all([
     ctx.pool.querySync([...relays], filter),
     fetchDeletedIds(ctx, relays),
   ]);
-  const [latest] = latestPerDTag(events);
+  const [latest] = latestPerDTag(onlyFromAuthor(rawEvents, ctx.pubkey));
   const deletedAt = deletedIds.get(id);
   // A relay that never processed the NIP-09 deletion (or simply lags) can
   // still serve the pre-deletion event; without this check a deleted

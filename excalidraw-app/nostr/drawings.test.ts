@@ -58,9 +58,16 @@ class TestLocalKeySigner implements NostrSigner {
   }
 }
 
-/** In-memory stand-in for `SimplePool`; no real relay/network I/O in these tests. */
+/**
+ * In-memory stand-in for `SimplePool`; no real relay/network I/O in these
+ * tests. With `ignoreAuthorsFilter`, simulates a malicious/non-compliant
+ * relay that returns events outside the requested `authors` filter —
+ * `drawings.ts` must defend against that itself, not trust the relay.
+ */
 class FakeRelayPool implements RelayPool {
   readonly events: NostrToolsEvent[] = [];
+
+  constructor(private readonly ignoreAuthorsFilter = false) {}
 
   publish(relays: string[], event: NostrToolsEvent): Promise<string>[] {
     this.events.push(event);
@@ -71,7 +78,10 @@ class FakeRelayPool implements RelayPool {
     _relays: string[],
     filter: Filter,
   ): Promise<NostrToolsEvent[]> {
-    return this.events.filter((event) => matchFilter(filter, event));
+    const effectiveFilter = this.ignoreAuthorsFilter
+      ? { ...filter, authors: undefined }
+      : filter;
+    return this.events.filter((event) => matchFilter(effectiveFilter, event));
   }
 }
 
@@ -85,12 +95,14 @@ const sampleInput = (
   ...overrides,
 });
 
-const makeContext = async (): Promise<{
+const makeContext = async (
+  ignoreAuthorsFilter = false,
+): Promise<{
   ctx: DrawingsContext;
   pool: FakeRelayPool;
 }> => {
   const signer = new TestLocalKeySigner();
-  const pool = new FakeRelayPool();
+  const pool = new FakeRelayPool(ignoreAuthorsFilter);
   const pubkey = await signer.getPublicKey();
   return { ctx: { pool, signer, pubkey }, pool };
 };
@@ -225,6 +237,57 @@ describe("drawings", () => {
     await expect(loadDrawing(ctx, RELAYS, envelope.id)).rejects.toBeInstanceOf(
       DrawingNotFoundError,
     );
+  });
+
+  test("a non-compliant relay returning a foreign author's drawing event is ignored", async () => {
+    // The attacker is a real signer with their own keypair, encrypting "to"
+    // the victim's pubkey the same way self-encryption does — but the event
+    // is genuinely signed by the attacker, not the victim. A relay that
+    // ignores the `authors` filter can still hand this back.
+    const { ctx, pool } = await makeContext(true);
+    const attacker = new TestLocalKeySigner();
+    const forged = await attacker.signEvent({
+      kind: DRAWING_KIND,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ["d", `${DRAWING_D_TAG_PREFIX}injected`],
+        ["t", "excalidraw-drawing"],
+      ],
+      content: await attacker.nip44Encrypt(ctx.pubkey, "irrelevant"),
+    });
+    pool.events.push(forged);
+
+    expect(await listDrawings(ctx, RELAYS)).toHaveLength(0);
+    await expect(loadDrawing(ctx, RELAYS, "injected")).rejects.toBeInstanceOf(
+      DrawingNotFoundError,
+    );
+  });
+
+  test("a non-compliant relay returning a foreign author's deletion is ignored", async () => {
+    // Without the author check, an attacker could forge a kind:5 event
+    // whose `a` tag points at the victim's own drawing and make it
+    // disappear from the victim's own list/load — impersonating a
+    // deletion the victim never made.
+    const { ctx, pool } = await makeContext(true);
+    const { envelope } = await saveDrawing(ctx, RELAYS, sampleInput());
+
+    const attacker = new TestLocalKeySigner();
+    const forgedDeletion = await attacker.signEvent({
+      kind: 5,
+      created_at: Math.floor(Date.now() / 1000) + 10,
+      tags: [
+        [
+          "a",
+          `${DRAWING_KIND}:${ctx.pubkey}:${DRAWING_D_TAG_PREFIX}${envelope.id}`,
+        ],
+      ],
+      content: "",
+    });
+    pool.events.push(forgedDeletion);
+
+    expect(await listDrawings(ctx, RELAYS)).toHaveLength(1);
+    const loaded = await loadDrawing(ctx, RELAYS, envelope.id);
+    expect(loaded.title).toBe("Groceries");
   });
 
   test("an oversized drawing is rejected before touching the relay", async () => {
