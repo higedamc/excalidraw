@@ -16,6 +16,8 @@ interface ImportMetaEnv {
   VITE_APP_AI_BACKEND: string;
 
   VITE_APP_FIREBASE_CONFIG: string;
+  // Comma-separated wss:// relay URLs used before/without the user's NIP-65 list
+  VITE_APP_NOSTR_RELAYS: string;
 
   // whether to disable live reload / HMR. Usuaully what you want to do when
   // debugging Service Workers.

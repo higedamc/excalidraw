@@ -774,5 +774,53 @@
     "spacebar": "Space",
     "delete": "Delete",
     "mmb": "Scroll wheel"
+  },
+  "nostr": {
+    "signIn": "Sign in with Nostr",
+    "signOut": "Sign out",
+    "myDrawings": "My drawings",
+    "saveToNostr": "Save to Nostr",
+    "copyNpub": "Copy npub",
+    "npubCopied": "npub copied to clipboard",
+    "signInDialog": {
+      "title": "Sign in with Nostr",
+      "description": "Your Nostr key stays in your signer. This app only asks it to sign and encrypt.",
+      "extensionTitle": "Browser extension",
+      "extensionDescription": "Use a NIP-07 extension such as nos2x or Alby.",
+      "extensionMissing": "No Nostr extension detected in this browser.",
+      "extensionButton": "Continue with extension",
+      "remoteTitle": "Remote signer",
+      "remoteDescription": "Paste a bunker:// or nostrconnect:// URI from your signer app.",
+      "remotePlaceholder": "bunker://…",
+      "remoteButton": "Connect",
+      "connecting": "Waiting for your signer to approve…",
+      "errorRejected": "Your signer rejected the request.",
+      "errorTimeout": "Your signer did not answer in time.",
+      "errorInvalidUri": "That is not a valid bunker:// or nostrconnect:// URI.",
+      "errorGeneric": "Could not sign in: {{message}}"
+    },
+    "account": {
+      "signedInAs": "Signed in as {{name}}",
+      "anonymous": "Not signed in",
+      "fromProfile": "From your Nostr profile"
+    },
+    "drawings": {
+      "title": "My drawings",
+      "empty": "No drawings saved to your relays yet.",
+      "loading": "Loading your drawings…",
+      "open": "Open",
+      "delete": "Delete",
+      "overwrite": "Overwrite",
+      "saveAsNew": "Save current as new",
+      "untitled": "Untitled drawing",
+      "updated": "Updated {{when}}",
+      "size": "{{kb}} KB",
+      "undecryptable": "Cannot decrypt this drawing with the current key.",
+      "published": "Saved to {{accepted}} of {{total}} relays.",
+      "publishFailed": "No relay accepted the drawing.",
+      "tooLarge": "This drawing is {{kb}} KB; the maximum is {{maxKb}} KB. Remove large images and try again.",
+      "confirmDelete": "Delete this drawing from your relays? This cannot be undone.",
+      "deleted": "Deletion request sent to your relays."
+    }
   }
 }
